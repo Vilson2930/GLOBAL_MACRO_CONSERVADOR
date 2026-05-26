@@ -1,14 +1,6 @@
 """
 engine/regime.py
-
 Motor de regime macro do GLOBAL_MACRO_ENGINE.
-
-Responsável por:
-- Calcular os 8 indicadores ponderados
-- Aplicar liquidez T-100 e liquidez hoje
-- Gerar Macro Score 0–100
-- Gerar Risk Budget e Defensive Budget
-- Classificar regime
 """
 
 from __future__ import annotations
@@ -51,10 +43,7 @@ class RegimeResult:
     indicators: IndicatorScores
 
 
-def get_latest_value(
-    series: pd.Series,
-    date: Optional[pd.Timestamp] = None,
-) -> float:
+def get_latest_value(series: pd.Series, date: Optional[pd.Timestamp] = None) -> float:
     if date is None:
         date = pd.Timestamp.today()
 
@@ -79,10 +68,7 @@ def slope_score(
     recent = float(s.iloc[-1])
     past = float(s.iloc[-lookback])
 
-    if past == 0:
-        raw = recent - past
-    else:
-        raw = (recent - past) / abs(past)
+    raw = recent - past if past == 0 else (recent - past) / abs(past)
 
     if not higher_is_better:
         raw *= -1
@@ -111,26 +97,10 @@ def level_score(
     return 0.0
 
 
-# ==========================================================
-# INDICADOR 1 E 2 — LIQUIDEZ
-# ==========================================================
-
 def calculate_liquidity_score(
     fred: Dict[str, pd.Series],
     as_of: pd.Timestamp,
 ) -> float:
-    """
-    Liquidez proxy v1: WALCL.
-
-    Regra:
-    - expansão do balanço = positivo
-    - contração do balanço = negativo
-
-    Versão institucional futura:
-    substituir WALCL por liquidez global composta:
-    Fed + ECB + BoJ + PBoC em USD.
-    """
-
     fed_assets = fred["fed_assets"].loc[
         fred["fed_assets"].index <= as_of
     ]
@@ -145,22 +115,9 @@ def calculate_liquidity_score(
     )
 
 
-# ==========================================================
-# INDICADOR 3 — TAXA REAL 10Y
-# ==========================================================
-
 def calculate_real_yield_score(
     fred: Dict[str, pd.Series],
 ) -> float:
-    """
-    Taxa real 10Y.
-
-    Regra:
-    - taxa real caindo = positivo
-    - taxa real baixa = positivo
-    - taxa real alta/subindo = negativo
-    """
-
     real_yield = fred["real_yield_10y"]
 
     trend = slope_score(
@@ -178,10 +135,6 @@ def calculate_real_yield_score(
 
     return float(np.clip(0.60 * trend + 0.40 * level, -1, 1))
 
-
-# ==========================================================
-# INDICADORES 4 E 5 — CRESCIMENTO
-# ==========================================================
 
 def calculate_pmi_score(
     global_pmi: Optional[float],
@@ -212,10 +165,6 @@ def calculate_oecd_cli_score(
 
     return 0.0
 
-
-# ==========================================================
-# INDICADORES 6 E 7 — CRÉDITO
-# ==========================================================
 
 def calculate_hy_spread_score(
     fred: Dict[str, pd.Series],
@@ -259,23 +208,9 @@ def calculate_nfci_score(
     return float(np.clip(0.60 * level + 0.40 * trend, -1, 1))
 
 
-# ==========================================================
-# INDICADOR 8 — FILTRO COMPOSTO
-# ==========================================================
-
 def calculate_filter_score(
     fred: Dict[str, pd.Series],
 ) -> float:
-    """
-    Filtro composto:
-    - Curva 10Y–3M
-    - VIX
-    - DXY proxy
-
-    O filtro não entra nos 100% dos pesos principais.
-    Ele atua como freio quando negativo.
-    """
-
     curve = get_latest_value(
         fred["yield_curve_10y_3m"]
     )
@@ -316,10 +251,6 @@ def calculate_filter_score(
     )
 
 
-# ==========================================================
-# SCORE FINAL
-# ==========================================================
-
 def classify_regime(
     macro_score: float,
 ) -> str:
@@ -352,10 +283,8 @@ def calculate_macro_score(
     )
 
     raw_score = float(np.clip(raw_score, -1, 1))
-
     macro_score = 50 + (raw_score * 50)
 
-    # filtro atua como freio se negativo
     if indicators.filtro_composto < 0:
         macro_score += indicators.filtro_composto * 10
 
@@ -367,16 +296,6 @@ def calculate_macro_score(
 def calculate_risk_budget(
     macro_score: float,
 ) -> tuple[float, float]:
-    """
-    Converte Macro Score em orçamento de risco.
-
-    0   = 0% risco
-    50  = 50% risco
-    100 = 100% risco
-
-    Limites de segurança podem ser aplicados futuramente em risk.py.
-    """
-
     risk_budget = macro_score / 100
     defensive_budget = 1.0 - risk_budget
 
@@ -388,22 +307,6 @@ def calculate_regime(
     global_pmi: Optional[float] = None,
     oecd_cli: Optional[float] = None,
 ) -> RegimeResult:
-    """
-    Função principal do regime.py.
-
-    Entrada:
-    - fred: dicionário de séries vindas do market_data.fetch_all_fred()
-    - global_pmi: manual/automático futuramente
-    - oecd_cli: manual/automático futuramente
-
-    Saída:
-    - Macro Score
-    - Risk Budget
-    - Defensive Budget
-    - Regime
-    - Scores individuais
-    """
-
     today = pd.Timestamp.today()
     lag_date = today - pd.Timedelta(days=LAG_LIQUIDEZ_DIAS)
 
