@@ -1,13 +1,14 @@
 """
 engine/asset_models.py
 
-Sensibilidade macro estrutural dos ativos.
+Modelos macro estruturais dos ativos.
 
-Quanto maior o alinhamento dos fatores macro,
-maior será o score e consequentemente o peso
-na carteira.
+Cada ativo possui sensibilidades diferentes
+a crescimento, liquidez, crédito, juros reais,
+dólar e stress financeiro.
 
-Sem teto artificial por ativo.
+Não há teto máximo artificial.
+O peso final será consequência do regime macro.
 """
 
 from __future__ import annotations
@@ -19,80 +20,78 @@ from __future__ import annotations
 
 ASSET_FACTORS = {
 
-    # --------------------------------------------------------
+    # ========================================================
     # BITCOIN
-    # Liquidez global e queda dos juros reais
-    # --------------------------------------------------------
+    # Principal beneficiário de liquidez global
+    # ========================================================
     "BTC-USD": {
-        "liquidity": 0.50,
-        "real_yield": -0.30,
-        "credit": 0.15,
+        "liquidity": 0.70,
+        "real_yield": -0.40,
+        "credit": 0.10,
         "usd": -0.20,
     },
 
-    # --------------------------------------------------------
-    # USA LARGE CAPS
+    # ========================================================
+    # S&P500
     # Crescimento econômico global
-    # --------------------------------------------------------
+    # ========================================================
     "VOO": {
-        "growth": 0.45,
-        "credit": 0.25,
-        "liquidity": 0.20,
+        "growth": 0.60,
+        "credit": 0.20,
+        "liquidity": 0.10,
         "real_yield": -0.10,
     },
 
-    # --------------------------------------------------------
+    # ========================================================
     # IA / ROBÓTICA
-    # Ativo satélite de beta elevado
-    # --------------------------------------------------------
+    # Muito sensível a liquidez e juros reais
+    # ========================================================
     "BOTZ": {
-        "liquidity": 0.40,
-        "real_yield": -0.35,
-        "growth": 0.20,
+        "liquidity": 0.45,
+        "real_yield": -0.55,
+        "growth": 0.15,
         "credit": 0.05,
     },
 
-    # --------------------------------------------------------
+    # ========================================================
     # ÍNDIA
-    # Dependente de crescimento global
-    # --------------------------------------------------------
+    # Aposta de crescimento emergente
+    # ========================================================
     "INDA": {
-        "growth": 0.55,
-        "liquidity": 0.15,
-        "credit": 0.15,
-        "usd": -0.15,
+        "growth": 0.70,
+        "liquidity": 0.10,
+        "credit": 0.10,
+        "usd": -0.10,
     },
 
-    # --------------------------------------------------------
+    # ========================================================
     # TREASURY LONGO
-    # Beneficia de desaceleração
-    # --------------------------------------------------------
+    # Beneficia desaceleração e queda de juros reais
+    # ========================================================
     "TLT": {
-        "real_yield": -0.55,
-        "growth": -0.25,
-        "credit": 0.15,
-        "liquidity": 0.05,
-    },
-
-    # --------------------------------------------------------
-    # OURO
-    # Hedge monetário e stress
-    # --------------------------------------------------------
-    "GLD": {
-        "real_yield": -0.45,
-        "liquidity": 0.20,
-        "stress": 0.25,
+        "real_yield": -0.70,
+        "growth": -0.20,
         "credit": 0.10,
     },
 
-    # --------------------------------------------------------
+    # ========================================================
+    # OURO
+    # Hedge monetário e stress sistêmico
+    # ========================================================
+    "GLD": {
+        "real_yield": -0.40,
+        "stress": 0.40,
+        "liquidity": 0.15,
+        "credit": 0.05,
+    },
+
+    # ========================================================
     # CAIXA
-    # Reserva defensiva
-    # --------------------------------------------------------
+    # Reserva para crises
+    # ========================================================
     "USDT": {
-        "stress": 0.50,
+        "stress": 0.60,
         "credit": -0.25,
-        "liquidity": -0.20,
         "growth": -0.15,
     },
 }
@@ -103,11 +102,7 @@ ASSET_FACTORS = {
 # ============================================================
 #
 # Sem teto máximo.
-#
-# BTC pode ir para 50%, 60%, 70%
-# se o regime justificar.
-#
-# Mantemos apenas piso operacional.
+# O regime macro decide.
 #
 # ============================================================
 
