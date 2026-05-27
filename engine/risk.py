@@ -1,138 +1,192 @@
 """
 engine/risk.py
 
-Módulo de risco e rebalanceamento do GLOBAL_MACRO_ENGINE.
+Motor de auditoria e rebalanceamento do GLOBAL_MACRO_ENGINE.
 
 Responsável por:
-- Calcular valor atual da carteira
-- Calcular peso atual por ativo
-- Comparar peso atual vs peso recomendado pelos indicadores
-- Gerar sugestão de COMPRAR / VENDER / MANTER
-- NÃO usa tabela fixa por regime
-- NÃO executa ordens
+
+- Calcular valor total da carteira
+- Calcular pesos atuais
+- Comparar pesos atuais vs pesos-alvo
+- Gerar tabela de rebalanceamento
+- Informar compra/venda necessária
 """
 
 from __future__ import annotations
 
 from typing import Dict
 
-import numpy as np
-import pandas as pd
 
+# ==========================================================
+# VALOR TOTAL DA CARTEIRA
+# ==========================================================
 
 def calculate_portfolio_values(
-    portfolio: pd.DataFrame,
+    positions: Dict[str, float],
     prices: Dict[str, float],
-) -> pd.DataFrame:
-    df = portfolio.copy()
+) -> Dict[str, float]:
+    """
+    positions:
+        {
+            "BTC-USD": 0.5,
+            "VOO": 10
+        }
 
-    df["Ativo"] = (
-        df["Ativo"]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
+    prices:
+        {
+            "BTC-USD": 70000,
+            "VOO": 550
+        }
 
-    df["Preco"] = df["Ativo"].map(prices)
+    retorno:
+        {
+            "BTC-USD": 35000,
+            "VOO": 5500
+        }
+    """
 
-    missing = df[df["Preco"].isna()]["Ativo"].tolist()
+    values = {}
 
-    if missing:
-        print(f"AVISO: preço não encontrado para {missing}. Valor tratado como 0.")
-        df["Preco"] = df["Preco"].fillna(0.0)
+    for asset, quantity in positions.items():
 
-    df["Valor_USD"] = df["Quantidade"] * df["Preco"]
+        price = prices.get(asset, 0)
 
-    total = df["Valor_USD"].sum()
+        values[asset] = quantity * price
+
+    return values
+
+
+# ==========================================================
+# VALOR TOTAL
+# ==========================================================
+
+def calculate_total_value(
+    values: Dict[str, float]
+) -> float:
+
+    return float(sum(values.values()))
+
+
+# ==========================================================
+# PESOS ATUAIS
+# ==========================================================
+
+def calculate_current_weights(
+    values: Dict[str, float]
+) -> Dict[str, float]:
+
+    total = calculate_total_value(values)
 
     if total <= 0:
-        raise ValueError("Valor total da carteira é zero. Verifique preços e quantidades.")
-
-    df["Peso_Atual"] = df["Valor_USD"] / total
-
-    return df
-
-
-def generate_rebalance_table(
-    portfolio_values: pd.DataFrame,
-    recommended_weights: Dict[str, float],
-) -> pd.DataFrame:
-    df = portfolio_values.copy()
-
-    total = df["Valor_USD"].sum()
-
-    df["Peso_Recomendado"] = (
-        df["Ativo"]
-        .map(recommended_weights)
-        .fillna(0.0)
-    )
-
-    df["Valor_Recomendado_USD"] = df["Peso_Recomendado"] * total
-
-    df["Diferenca_USD"] = (
-        df["Valor_Recomendado_USD"] - df["Valor_USD"]
-    )
-
-    df["Diferenca_Peso"] = (
-        df["Peso_Recomendado"] - df["Peso_Atual"]
-    )
-
-    def action(value: float) -> str:
-        if value > 0:
-            return "COMPRAR"
-        if value < 0:
-            return "VENDER"
-        return "MANTER"
-
-    df["Acao"] = df["Diferenca_USD"].apply(action)
-
-    return df[
-        [
-            "Ativo",
-            "Classe",
-            "Quantidade",
-            "Preco",
-            "Valor_USD",
-            "Peso_Atual",
-            "Peso_Recomendado",
-            "Valor_Recomendado_USD",
-            "Diferenca_Peso",
-            "Diferenca_USD",
-            "Acao",
-        ]
-    ].sort_values("Diferenca_USD", ascending=False)
-
-
-def calculate_risk_summary(
-    rebalance: pd.DataFrame,
-    risk_assets: list[str],
-    defensive_assets: list[str],
-) -> Dict[str, float]:
-    current_risk = rebalance.loc[
-        rebalance["Ativo"].isin(risk_assets),
-        "Peso_Atual",
-    ].sum()
-
-    recommended_risk = rebalance.loc[
-        rebalance["Ativo"].isin(risk_assets),
-        "Peso_Recomendado",
-    ].sum()
-
-    current_defensive = rebalance.loc[
-        rebalance["Ativo"].isin(defensive_assets),
-        "Peso_Atual",
-    ].sum()
-
-    recommended_defensive = rebalance.loc[
-        rebalance["Ativo"].isin(defensive_assets),
-        "Peso_Recomendado",
-    ].sum()
+        return {}
 
     return {
-        "current_risk": float(current_risk),
-        "recommended_risk": float(recommended_risk),
-        "current_defensive": float(current_defensive),
-        "recommended_defensive": float(recommended_defensive),
-        "risk_delta": float(recommended_risk - current_risk),
-        "defensive_delta": float(recommended_defensive - current_defensive),
+        asset: value / total
+        for asset, value in values.items()
+    }
+
+
+# ==========================================================
+# DESVIO
+# ==========================================================
+
+def calculate_weight_difference(
+    current_weights: Dict[str, float],
+    target_weights: Dict[str, float]
+) -> Dict[str, float]:
+
+    assets = (
+        set(current_weights.keys())
+        | set(target_weights.keys())
+    )
+
+    diff = {}
+
+    for asset in assets:
+
+        current = current_weights.get(asset, 0)
+
+        target = target_weights.get(asset, 0)
+
+        diff[asset] = target - current
+
+    return diff
+
+
+# ==========================================================
+# REBALANCEAMENTO
+# ==========================================================
+
+def generate_rebalance_table(
+    values: Dict[str, float],
+    target_weights: Dict[str, float]
+) -> Dict[str, Dict]:
+
+    total = calculate_total_value(values)
+
+    current_weights = calculate_current_weights(values)
+
+    rebalance = {}
+
+    assets = (
+        set(values.keys())
+        | set(target_weights.keys())
+    )
+
+    for asset in assets:
+
+        current_value = values.get(asset, 0)
+
+        current_weight = current_weights.get(asset, 0)
+
+        target_weight = target_weights.get(asset, 0)
+
+        target_value = total * target_weight
+
+        delta_value = target_value - current_value
+
+        if delta_value > 0:
+            action = "BUY"
+
+        elif delta_value < 0:
+            action = "SELL"
+
+        else:
+            action = "HOLD"
+
+        rebalance[asset] = {
+            "current_value": round(current_value, 2),
+            "current_weight": round(current_weight * 100, 2),
+            "target_weight": round(target_weight * 100, 2),
+            "target_value": round(target_value, 2),
+            "delta_value": round(delta_value, 2),
+            "action": action,
+        }
+
+    return rebalance
+
+
+# ==========================================================
+# AUDITORIA
+# ==========================================================
+
+def portfolio_risk_report(
+    values: Dict[str, float],
+    target_weights: Dict[str, float]
+) -> Dict:
+
+    total = calculate_total_value(values)
+
+    current_weights = calculate_current_weights(values)
+
+    diff = calculate_weight_difference(
+        current_weights,
+        target_weights
+    )
+
+    return {
+        "total_value": round(total, 2),
+        "current_weights": current_weights,
+        "target_weights": target_weights,
+        "difference": diff,
     }
