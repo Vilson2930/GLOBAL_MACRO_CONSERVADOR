@@ -1,1 +1,126 @@
+"""
+engine/asset_models.py
 
+Modelos econômicos por ativo.
+
+Cada ativo possui sensibilidades diferentes
+aos fatores macro.
+
+Não existem tetos nem pisos.
+Os pesos finais são determinados pelos scores.
+"""
+
+from __future__ import annotations
+
+
+ASSET_FACTORS = {
+
+    # =====================================================
+    # RISCO
+    # =====================================================
+
+    "BTC-USD": {
+
+        # principal driver
+        "liquidity": 0.55,
+
+        # juros reais mais altos prejudicam
+        "real_yield": -0.25,
+
+        # melhora do crédito ajuda
+        "credit": 0.10,
+
+        # dólar forte prejudica
+        "usd": -0.10,
+    },
+
+    "VOO": {
+
+        # crescimento econômico
+        "growth": 0.40,
+
+        # spreads apertando
+        "credit": 0.25,
+
+        # liquidez global
+        "liquidity": 0.20,
+
+        # juros reais altos pressionam valuation
+        "real_yield": -0.15,
+    },
+
+    "BOTZ": {
+
+        # tecnologia responde fortemente à liquidez
+        "liquidity": 0.35,
+
+        # duration longa
+        "real_yield": -0.35,
+
+        "growth": 0.20,
+
+        "credit": 0.10,
+    },
+
+    "INDA": {
+
+        # crescimento é o principal driver
+        "growth": 0.35,
+
+        "credit": 0.20,
+
+        "liquidity": 0.15,
+
+        # emergentes sofrem com dólar forte
+        "usd": -0.30,
+    },
+
+    # =====================================================
+    # DEFENSIVOS
+    # =====================================================
+
+    "TLT": {
+
+        # duration longa
+        "real_yield": -0.50,
+
+        # desaceleração favorece bonds
+        "growth": -0.25,
+
+        "credit": 0.15,
+
+        # liquidez excessiva favorece risco
+        "liquidity": -0.05,
+    },
+
+    "GLD": {
+
+        # principal driver do ouro
+        "real_yield": -0.45,
+
+        # dólar forte pressiona ouro
+        "usd": -0.25,
+
+        # hedge de stress
+        "stress": 0.15,
+
+        "credit": 0.10,
+
+        "liquidity": 0.05,
+    },
+
+    "USDT": {
+
+        # stress financeiro favorece caixa
+        "stress": 0.40,
+
+        # deterioração do crédito favorece caixa
+        "credit": -0.25,
+
+        # liquidez abundante reduz necessidade de caixa
+        "liquidity": -0.20,
+
+        # crescimento forte reduz necessidade de caixa
+        "growth": -0.15,
+    },
+}
