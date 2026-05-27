@@ -5,6 +5,7 @@ Alocação dinâmica institucional:
 Macro Score -> Risk Budget / Defensive Budget
 -> Score individual por ativo
 -> limites estruturais por ativo
+-> penalização de satélites em desaceleração
 -> pesos finais normalizados
 """
 
@@ -16,13 +17,13 @@ from settings import RISK_ASSETS, DEFENSIVE_ASSETS
 
 
 ASSET_LIMITS = {
-    "BTC-USD": {"min": 0.05, "max": 0.35},
-    "VOO": {"min": 0.10, "max": 0.40},
-    "BOTZ": {"min": 0.00, "max": 0.15},
-    "INDA": {"min": 0.00, "max": 0.10},
-    "TLT": {"min": 0.05, "max": 0.40},
-    "GLD": {"min": 0.05, "max": 0.30},
-    "USDT": {"min": 0.05, "max": 0.35},
+    "BTC-USD": {"min": 0.05, "max": 0.25},
+    "VOO": {"min": 0.10, "max": 0.35},
+    "BOTZ": {"min": 0.00, "max": 0.08},
+    "INDA": {"min": 0.00, "max": 0.08},
+    "TLT": {"min": 0.05, "max": 0.35},
+    "GLD": {"min": 0.05, "max": 0.25},
+    "USDT": {"min": 0.05, "max": 0.30},
 }
 
 
@@ -32,9 +33,11 @@ def clamp(value: float, low: float, high: float) -> float:
 
 def normalize(weights: Dict[str, float]) -> Dict[str, float]:
     total = sum(weights.values())
+
     if total <= 0:
         n = len(weights)
-        return {k: 1 / n for k in weights}
+        return {k: 1.0 / n for k in weights}
+
     return {k: v / total for k, v in weights.items()}
 
 
@@ -68,42 +71,36 @@ def calculate_asset_scores(regime_result) -> Dict[str, float]:
             + 0.15 * credit
             + 0.10 * filter_score
         ),
-
         "VOO": (
             0.40 * growth
             + 0.30 * credit
             + 0.20 * liquidity
             + 0.10 * filter_score
         ),
-
         "BOTZ": (
             0.40 * liquidity
             + 0.30 * real_yield
             + 0.20 * growth
             + 0.10 * credit
         ),
-
         "INDA": (
             0.40 * growth
             + 0.25 * credit
             + 0.20 * liquidity
             + 0.15 * filter_score
         ),
-
         "TLT": (
             -0.40 * growth
             -0.35 * real_yield
             -0.10 * liquidity
             + 0.15 * credit
         ),
-
         "GLD": (
             -0.35 * real_yield
             -0.30 * liquidity
             -0.20 * filter_score
             + 0.15 * credit
         ),
-
         "USDT": (
             -0.35 * liquidity
             -0.25 * filter_score
@@ -111,6 +108,15 @@ def calculate_asset_scores(regime_result) -> Dict[str, float]:
             + 0.20 * credit
         ),
     }
+
+    if regime_result.macro_score < 50:
+        raw["INDA"] *= 0.65
+        raw["BOTZ"] *= 0.75
+
+    if regime_result.macro_score < 40:
+        raw["BTC-USD"] *= 0.80
+        raw["INDA"] *= 0.70
+        raw["BOTZ"] *= 0.70
 
     return {asset: positive_score(score) for asset, score in raw.items()}
 
