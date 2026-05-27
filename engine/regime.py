@@ -1,233 +1,306 @@
-# ============================================================
-# engine/regime.py CORRIGIDO
-# ============================================================
+"""
+engine/regime.py
+Motor de regime macro do GLOBAL_MACRO_ENGINE.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Dict, Optional
 
+import numpy as np
+import pandas as pd
 
-# ============================================================
-# DATACLASS DOS INDICADORES
-# ============================================================
+from settings import (
+    LAG_LIQUIDEZ_DIAS,
+    INDICATOR_WEIGHTS,
+    BULL_THRESHOLD,
+    EXPANSAO_THRESHOLD,
+    NEUTRO_THRESHOLD,
+    DESACELERACAO_THRESHOLD,
+)
+
 
 @dataclass
 class IndicatorScores:
-
-    liquidez_hoje: float
     liquidez_t_100: float
-
+    liquidez_hoje: float
+    real_yield_10y: float
     global_pmi: float
     oecd_cli: float
-
     hy_spread: float
     nfci: float
-
-    real_yield_10y: float
-    yield_curve_10y_3m: float
-
     dxy_proxy: float
     vix: float
-
     filtro_composto: float
 
 
-# ============================================================
-# RESULTADO FINAL DO REGIME
-# ============================================================
-
 @dataclass
 class RegimeResult:
-
     macro_score: float
     raw_score: float
-
     risk_budget: float
     defensive_budget: float
-
     regime: str
-
     indicators: IndicatorScores
 
 
-# ============================================================
-# FUNÇÕES AUXILIARES
-# ============================================================
+def get_latest_value(series: pd.Series, date: Optional[pd.Timestamp] = None) -> float:
+    if date is None:
+        date = pd.Timestamp.today()
 
-def clamp(x: float, low: float, high: float) -> float:
-    return max(low, min(high, x))
+    valid = series.loc[series.index <= date].dropna()
 
+    if valid.empty:
+        return 0.0
 
-# ============================================================
-# SCORES INDIVIDUAIS
-# ============================================================
-
-def calculate_liquidity_score(fred) -> float:
-
-    val = fred["fed_assets"]["zscore"]
-
-    return clamp(val, -2.0, 2.0)
+    return float(valid.iloc[-1])
 
 
-def calculate_growth_score(fred) -> tuple[float, float]:
+def slope_score(series: pd.Series, lookback: int = 60, higher_is_better: bool = True) -> float:
+    s = series.dropna()
 
-    pmi = fred["global_pmi"]["zscore"]
-    cli = fred["oecd_cli"]["zscore"]
+    if len(s) < lookback + 2:
+        return 0.0
 
-    return (
-        clamp(pmi, -2.0, 2.0),
-        clamp(cli, -2.0, 2.0),
-    )
+    recent = float(s.iloc[-1])
+    past = float(s.iloc[-lookback])
 
+    if past == 0:
+        raw = recent - past
+    else:
+        raw = (recent - past) / abs(past)
 
-def calculate_credit_score(fred) -> tuple[float, float]:
+    if not higher_is_better:
+        raw *= -1
 
-    hy = -fred["hy_spread"]["zscore"]
-    nfci = -fred["nfci"]["zscore"]
-
-    return (
-        clamp(hy, -2.0, 2.0),
-        clamp(nfci, -2.0, 2.0),
-    )
+    return float(np.clip(raw * 10, -1, 1))
 
 
-def calculate_real_yield_score(fred) -> float:
-
-    val = -fred["real_yield_10y"]["zscore"]
-
-    return clamp(val, -2.0, 2.0)
-
-
-def calculate_curve_score(fred) -> float:
-
-    val = fred["yield_curve_10y_3m"]["zscore"]
-
-    return clamp(val, -2.0, 2.0)
-
-
-def calculate_dxy_score(fred) -> float:
-
-    val = -fred["dxy_proxy"]["zscore"]
-
-    return clamp(val, -2.0, 2.0)
-
-
-def calculate_vix_score(fred) -> float:
-
-    val = -fred["vix"]["zscore"]
-
-    return clamp(val, -2.0, 2.0)
-
-
-def calculate_filter_score(
-    liquidity: float,
-    growth: float,
-    credit: float,
-    real_yield: float,
-    curve: float,
-    dxy: float,
-    vix: float,
+def level_score(
+    value: float,
+    positive_threshold: float,
+    negative_threshold: float,
+    lower_is_better: bool = False,
 ) -> float:
+    if lower_is_better:
+        if value <= positive_threshold:
+            return 1.0
+        if value >= negative_threshold:
+            return -1.0
+        return 0.0
 
-    score = (
-        0.25 * liquidity
-        + 0.20 * growth
-        + 0.20 * credit
-        + 0.15 * real_yield
-        + 0.10 * curve
-        + 0.05 * dxy
-        + 0.05 * vix
+    if value >= positive_threshold:
+        return 1.0
+    if value <= negative_threshold:
+        return -1.0
+
+    return 0.0
+
+
+def calculate_liquidity_score(fred: Dict[str, pd.Series], as_of: pd.Timestamp) -> float:
+    fed_assets = fred["fed_assets"].loc[fred["fed_assets"].index <= as_of]
+
+    return slope_score(
+        fed_assets,
+        lookback=100,
+        higher_is_better=True,
     )
 
-    return clamp(score, -2.0, 2.0)
 
+def calculate_real_yield_score(fred: Dict[str, pd.Series]) -> float:
+    real_yield = fred["real_yield_10y"]
 
-# ============================================================
-# REGIME ENGINE
-# ============================================================
-
-def calculate_regime(fred) -> RegimeResult:
-
-    liquidez_hoje = calculate_liquidity_score(fred)
-    liquidez_t_100 = liquidez_hoje
-
-    global_pmi, oecd_cli = calculate_growth_score(fred)
-
-    hy_spread, nfci = calculate_credit_score(fred)
-
-    real_yield_10y = calculate_real_yield_score(fred)
-
-    yield_curve_10y_3m = calculate_curve_score(fred)
-
-    dxy_proxy = calculate_dxy_score(fred)
-
-    vix = calculate_vix_score(fred)
-
-    filtro_composto = calculate_filter_score(
-        liquidity=liquidez_hoje,
-        growth=(global_pmi + oecd_cli) / 2,
-        credit=(hy_spread + nfci) / 2,
-        real_yield=real_yield_10y,
-        curve=yield_curve_10y_3m,
-        dxy=dxy_proxy,
-        vix=vix,
+    trend = slope_score(
+        real_yield,
+        lookback=60,
+        higher_is_better=False,
     )
 
-    raw_score = filtro_composto
+    level = level_score(
+        get_latest_value(real_yield),
+        positive_threshold=0.50,
+        negative_threshold=2.00,
+        lower_is_better=True,
+    )
 
-    macro_score = 50 + (raw_score * 25)
+    return float(np.clip(0.60 * trend + 0.40 * level, -1, 1))
 
-    macro_score = clamp(macro_score, 0, 100)
 
-    risk_budget = clamp(macro_score / 100, 0.10, 0.90)
+def calculate_pmi_score(global_pmi: Optional[float]) -> float:
+    if global_pmi is None:
+        return 0.0
 
+    if global_pmi >= 52:
+        return 1.0
+    if global_pmi <= 49:
+        return -1.0
+
+    return 0.0
+
+
+def calculate_oecd_cli_score(oecd_cli: Optional[float]) -> float:
+    if oecd_cli is None:
+        return 0.0
+
+    if oecd_cli >= 100.5:
+        return 1.0
+    if oecd_cli <= 99.5:
+        return -1.0
+
+    return 0.0
+
+
+def calculate_hy_spread_score(fred: Dict[str, pd.Series]) -> float:
+    hy = fred["hy_spread"]
+
+    level = level_score(
+        get_latest_value(hy),
+        positive_threshold=3.50,
+        negative_threshold=5.50,
+        lower_is_better=True,
+    )
+
+    trend = slope_score(
+        hy,
+        lookback=60,
+        higher_is_better=False,
+    )
+
+    return float(np.clip(0.60 * level + 0.40 * trend, -1, 1))
+
+
+def calculate_nfci_score(fred: Dict[str, pd.Series]) -> float:
+    nfci = fred["nfci"]
+
+    level = level_score(
+        get_latest_value(nfci),
+        positive_threshold=-0.25,
+        negative_threshold=0.25,
+        lower_is_better=True,
+    )
+
+    trend = slope_score(
+        nfci,
+        lookback=60,
+        higher_is_better=False,
+    )
+
+    return float(np.clip(0.60 * level + 0.40 * trend, -1, 1))
+
+
+def calculate_dxy_score(fred: Dict[str, pd.Series]) -> float:
+    return slope_score(
+        fred["dxy_proxy"],
+        lookback=60,
+        higher_is_better=False,
+    )
+
+
+def calculate_vix_score(fred: Dict[str, pd.Series]) -> float:
+    vix = get_latest_value(fred["vix"])
+
+    return level_score(
+        vix,
+        positive_threshold=18.0,
+        negative_threshold=28.0,
+        lower_is_better=True,
+    )
+
+
+def calculate_filter_score(fred: Dict[str, pd.Series]) -> float:
+    curve = get_latest_value(fred["yield_curve_10y_3m"])
+
+    curve_score = level_score(
+        curve,
+        positive_threshold=0.50,
+        negative_threshold=-0.50,
+    )
+
+    vix_score = calculate_vix_score(fred)
+    dxy_score = calculate_dxy_score(fred)
+
+    return float(
+        np.clip(
+            np.mean([curve_score, vix_score, dxy_score]),
+            -1,
+            1,
+        )
+    )
+
+
+def calculate_macro_score(indicators: IndicatorScores) -> tuple[float, float]:
+    raw_score = (
+        INDICATOR_WEIGHTS["liquidez_t_100"] * indicators.liquidez_t_100
+        + INDICATOR_WEIGHTS["liquidez_hoje"] * indicators.liquidez_hoje
+        + INDICATOR_WEIGHTS["real_yield_10y"] * indicators.real_yield_10y
+        + INDICATOR_WEIGHTS["global_pmi"] * indicators.global_pmi
+        + INDICATOR_WEIGHTS["oecd_cli"] * indicators.oecd_cli
+        + INDICATOR_WEIGHTS["hy_spread"] * indicators.hy_spread
+        + INDICATOR_WEIGHTS["nfci"] * indicators.nfci
+    )
+
+    raw_score = float(np.clip(raw_score, -1, 1))
+    macro_score = 50 + raw_score * 50
+
+    if indicators.filtro_composto < 0:
+        macro_score += indicators.filtro_composto * 10
+
+    macro_score = float(np.clip(macro_score, 0, 100))
+
+    return macro_score, raw_score
+
+
+def classify_regime(macro_score: float) -> str:
+    if macro_score >= BULL_THRESHOLD:
+        return "BULL"
+    if macro_score >= EXPANSAO_THRESHOLD:
+        return "EXPANSAO"
+    if macro_score >= NEUTRO_THRESHOLD:
+        return "NEUTRO"
+    if macro_score >= DESACELERACAO_THRESHOLD:
+        return "DESACELERACAO"
+
+    return "STRESS"
+
+
+def calculate_risk_budget(macro_score: float) -> tuple[float, float]:
+    risk_budget = macro_score / 100
     defensive_budget = 1.0 - risk_budget
 
-    # ========================================================
-    # CLASSIFICAÇÃO
-    # ========================================================
+    return risk_budget, defensive_budget
 
-    if macro_score >= 70:
-        regime = "EXPANSAO"
 
-    elif macro_score >= 55:
-        regime = "RECUPERACAO"
-
-    elif macro_score >= 40:
-        regime = "DESACELERACAO"
-
-    else:
-        regime = "CONTRACAO"
+def calculate_regime(
+    fred: Dict[str, pd.Series],
+    global_pmi: Optional[float] = None,
+    oecd_cli: Optional[float] = None,
+) -> RegimeResult:
+    today = pd.Timestamp.today()
+    lag_date = today - pd.Timedelta(days=LAG_LIQUIDEZ_DIAS)
 
     indicators = IndicatorScores(
-
-        liquidez_hoje=liquidez_hoje,
-        liquidez_t_100=liquidez_t_100,
-
-        global_pmi=global_pmi,
-        oecd_cli=oecd_cli,
-
-        hy_spread=hy_spread,
-        nfci=nfci,
-
-        real_yield_10y=real_yield_10y,
-        yield_curve_10y_3m=yield_curve_10y_3m,
-
-        dxy_proxy=dxy_proxy,
-        vix=vix,
-
-        filtro_composto=filtro_composto,
+        liquidez_t_100=calculate_liquidity_score(fred, as_of=lag_date),
+        liquidez_hoje=calculate_liquidity_score(fred, as_of=today),
+        real_yield_10y=calculate_real_yield_score(fred),
+        global_pmi=calculate_pmi_score(global_pmi),
+        oecd_cli=calculate_oecd_cli_score(oecd_cli),
+        hy_spread=calculate_hy_spread_score(fred),
+        nfci=calculate_nfci_score(fred),
+        dxy_proxy=calculate_dxy_score(fred),
+        vix=calculate_vix_score(fred),
+        filtro_composto=calculate_filter_score(fred),
     )
 
-    return RegimeResult(
+    macro_score, raw_score = calculate_macro_score(indicators)
+    risk_budget, defensive_budget = calculate_risk_budget(macro_score)
+    regime = classify_regime(macro_score)
 
+    return RegimeResult(
         macro_score=macro_score,
         raw_score=raw_score,
-
         risk_budget=risk_budget,
         defensive_budget=defensive_budget,
-
         regime=regime,
-
         indicators=indicators,
     )
