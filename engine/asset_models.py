@@ -10,11 +10,12 @@ from __future__ import annotations
 
 
 ASSET_FACTORS = {
+
     "BTC-USD": {
-        "liquidity": 0.45,
+        "liquidity": 0.55,
         "real_yield": -0.25,
-        "credit": 0.15,
-        "usd": -0.15,
+        "credit": 0.10,
+        "usd": -0.10,
     },
 
     "VOO": {
@@ -32,24 +33,25 @@ ASSET_FACTORS = {
     },
 
     "INDA": {
-        "growth": 0.50,
-        "liquidity": 0.20,
-        "credit": 0.15,
-        "usd": -0.15,
+        "growth": 0.35,
+        "liquidity": 0.15,
+        "credit": 0.20,
+        "usd": -0.30,
     },
 
     "TLT": {
         "real_yield": -0.50,
         "growth": -0.25,
         "credit": 0.15,
-        "liquidity": 0.10,
+        "liquidity": -0.05,
     },
 
     "GLD": {
         "real_yield": -0.45,
-        "liquidity": 0.25,
-        "stress": 0.20,
+        "usd": -0.25,
+        "stress": 0.15,
         "credit": 0.10,
+        "liquidity": 0.05,
     },
 
     "USDT": {
@@ -62,11 +64,39 @@ ASSET_FACTORS = {
 
 
 ASSET_LIMITS = {
-    "BTC-USD": {"min": 0.00, "max": 0.35},
-    "VOO": {"min": 0.05, "max": 0.45},
-    "BOTZ": {"min": 0.00, "max": 0.15},
-    "INDA": {"min": 0.00, "max": 0.15},
-    "TLT": {"min": 0.00, "max": 0.45},
-    "GLD": {"min": 0.00, "max": 0.35},
-    "USDT": {"min": 0.05, "max": 0.40},
+
+    "BTC-USD": {
+        "min": 0.00,
+        "max": 0.35,
+    },
+
+    "VOO": {
+        "min": 0.05,
+        "max": 0.45,
+    },
+
+    "BOTZ": {
+        "min": 0.00,
+        "max": 0.10,
+    },
+
+    "INDA": {
+        "min": 0.00,
+        "max": 0.10,
+    },
+
+    "TLT": {
+        "min": 0.00,
+        "max": 0.45,
+    },
+
+    "GLD": {
+        "min": 0.00,
+        "max": 0.35,
+    },
+
+    "USDT": {
+        "min": 0.05,
+        "max": 0.40,
+    },
 }
