@@ -1,33 +1,13 @@
-"""
-engine/allocation.py
-
-Alocação institucional baseada em fatores macro.
-
-Não utiliza:
-- Risk Budget
-- Defensive Budget
-- Buckets fixos
-
-Todos os ativos competem entre si
-pelos mesmos indicadores macro.
-"""
-
 from __future__ import annotations
 
 from typing import Dict
 
-from engine.asset_models import (
-    ASSET_FACTORS,
-    ASSET_LIMITS,
+from settings import (
+    RISK_ASSETS,
+    DEFENSIVE_ASSETS,
 )
 
-
-# ============================================================
-# UTIL
-# ============================================================
-
-def clamp(value: float, low: float, high: float) -> float:
-    return float(max(low, min(high, value)))
+from engine.asset_models import ASSET_FACTORS
 
 
 def normalize(weights: Dict[str, float]) -> Dict[str, float]:
@@ -36,7 +16,10 @@ def normalize(weights: Dict[str, float]) -> Dict[str, float]:
 
     if total <= 0:
         n = len(weights)
-        return {k: 1.0 / n for k in weights}
+        return {
+            k: 1.0 / n
+            for k in weights
+        }
 
     return {
         k: v / total
@@ -44,11 +27,11 @@ def normalize(weights: Dict[str, float]) -> Dict[str, float]:
     }
 
 
-# ============================================================
-# SCORE DOS ATIVOS
-# ============================================================
+def positive_score(x: float) -> float:
+    return max(0.05, 1.0 + x)
 
-def calculate_asset_scores(regime_result) -> Dict[str, float]:
+
+def calculate_asset_scores(regime_result):
 
     i = regime_result.indicators
 
@@ -77,78 +60,79 @@ def calculate_asset_scores(regime_result) -> Dict[str, float]:
 
     scores = {}
 
-    for asset, model in ASSET_FACTORS.items():
+    for asset, exposures in ASSET_FACTORS.items():
 
-        score = 1.0
+        raw_score = 0.0
 
-        for factor_name, sensitivity in model.items():
+        for factor_name, factor_weight in exposures.items():
 
-            factor_value = factors.get(
-                factor_name,
-                0.0
+            raw_score += (
+                factor_weight
+                * factors[factor_name]
             )
 
-            score += sensitivity * factor_value
-
-        scores[asset] = max(score, 0.05)
+        scores[asset] = positive_score(raw_score)
 
     return scores
 
 
-# ============================================================
-# ALOCAÇÃO FINAL
-# ============================================================
-
 def calculate_dynamic_allocation(
     regime_result
-) -> Dict[str, float]:
+):
 
     scores = calculate_asset_scores(
         regime_result
     )
 
-    weighted_scores = {}
-
-    for asset, score in scores.items():
-
-        strength = sum(
-            abs(v)
-            for v in ASSET_FACTORS[asset].values()
-        )
-
-        weighted_scores[asset] = (
-            score * strength
-        )
-
-    allocation = normalize(
-        weighted_scores
+    risk_budget = float(
+        regime_result.risk_budget
     )
 
-    final_weights = {}
-
-    for asset, weight in allocation.items():
-
-        limits = ASSET_LIMITS[asset]
-
-        final_weights[asset] = clamp(
-            weight,
-            limits["min"],
-            limits["max"]
-        )
-
-    return normalize(
-        final_weights
+    defensive_budget = float(
+        regime_result.defensive_budget
     )
 
+    risk_scores = {
+        a: scores[a]
+        for a in RISK_ASSETS
+    }
 
-# ============================================================
-# EXPLICAÇÃO
-# ============================================================
+    defensive_scores = {
+        a: scores[a]
+        for a in DEFENSIVE_ASSETS
+    }
+
+    risk_weights = normalize(
+        risk_scores
+    )
+
+    defensive_weights = normalize(
+        defensive_scores
+    )
+
+    allocation = {}
+
+    for asset, weight in risk_weights.items():
+
+        allocation[asset] = (
+            weight
+            * risk_budget
+        )
+
+    for asset, weight in defensive_weights.items():
+
+        allocation[asset] = (
+            weight
+            * defensive_budget
+        )
+
+    return allocation
+
 
 def explain_allocation(
     regime_result,
-    allocation: Dict[str, float]
-) -> str:
+    allocation,
+):
 
     scores = calculate_asset_scores(
         regime_result
@@ -164,8 +148,9 @@ def explain_allocation(
     for asset, score in sorted(
         scores.items(),
         key=lambda x: x[1],
-        reverse=True
+        reverse=True,
     ):
+
         lines.append(
             f"{asset}: {score:.4f}"
         )
@@ -176,8 +161,9 @@ def explain_allocation(
     for asset, weight in sorted(
         allocation.items(),
         key=lambda x: x[1],
-        reverse=True
+        reverse=True,
     ):
+
         lines.append(
             f"{asset}: {weight:.2%}"
         )
