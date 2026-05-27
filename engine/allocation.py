@@ -2,6 +2,12 @@
 engine/allocation.py
 
 Alocação dinâmica por orçamento de risco + score individual por ativo.
+
+Lógica:
+1. Regime macro define quanto vai para risco e defesa.
+2. Cada ativo recebe score próprio conforme os indicadores.
+3. O orçamento do grupo é distribuído proporcionalmente aos scores.
+4. Não há peso fixo por ativo.
 """
 
 from __future__ import annotations
@@ -18,11 +24,21 @@ def clamp(value: float, low: float, high: float) -> float:
 
 
 def normalize(weights: Dict[str, float]) -> Dict[str, float]:
-    total = sum(weights.values())
+    total = float(sum(weights.values()))
+
     if total <= 0:
         n = len(weights)
-        return {k: 1 / n for k in weights}
-    return {k: v / total for k, v in weights.items()}
+        return {asset: 1.0 / n for asset in weights}
+
+    return {asset: float(weight / total) for asset, weight in weights.items()}
+
+
+def score_to_positive(value: float) -> float:
+    """
+    Converte score macro em número positivo.
+    Evita pesos negativos e mantém diferenciação entre ativos.
+    """
+    return clamp(1.0 + value, 0.05, 3.0)
 
 
 def calculate_asset_scores(regime_result) -> Dict[str, float]:
@@ -34,17 +50,68 @@ def calculate_asset_scores(regime_result) -> Dict[str, float]:
     real_yield = i.real_yield_10y
     filter_score = i.filtro_composto
 
-    scores = {
-        "BTC-USD": 1.00 + 0.45 * liquidity + 0.30 * real_yield + 0.15 * credit,
-        "VOO": 1.00 + 0.35 * growth + 0.30 * credit + 0.20 * liquidity,
-        "BOTZ": 1.00 + 0.35 * liquidity + 0.25 * growth + 0.25 * real_yield,
-        "INDA": 1.00 + 0.35 * growth + 0.25 * liquidity + 0.20 * filter_score,
-        "TLT": 1.00 - 0.35 * growth - 0.25 * real_yield + 0.25 * credit,
-        "GLD": 1.00 - 0.30 * real_yield - 0.20 * filter_score - 0.15 * liquidity,
-        "USDT": 1.00 - 0.35 * liquidity - 0.25 * filter_score,
+    raw_scores = {
+        # BTC: depende muito de liquidez e taxa real
+        "BTC-USD": (
+            0.40 * liquidity
+            + 0.30 * real_yield
+            + 0.20 * credit
+            + 0.10 * filter_score
+        ),
+
+        # VOO: depende mais de crescimento e crédito
+        "VOO": (
+            0.35 * growth
+            + 0.30 * credit
+            + 0.20 * liquidity
+            + 0.15 * filter_score
+        ),
+
+        # BOTZ: risco alto, sensível a liquidez e taxa real
+        "BOTZ": (
+            0.35 * liquidity
+            + 0.25 * real_yield
+            + 0.25 * growth
+            + 0.15 * credit
+        ),
+
+        # INDA: emergente, sensível a crescimento e liquidez
+        "INDA": (
+            0.35 * growth
+            + 0.25 * liquidity
+            + 0.25 * credit
+            + 0.15 * filter_score
+        ),
+
+        # TLT: favorecido por desaceleração e taxa real menos restritiva
+        "TLT": (
+            -0.35 * growth
+            -0.30 * real_yield
+            + 0.20 * credit
+            -0.15 * liquidity
+        ),
+
+        # GLD: favorecido por taxa real ruim, liquidez fraca e proteção
+        "GLD": (
+            -0.35 * real_yield
+            -0.25 * liquidity
+            -0.20 * filter_score
+            + 0.20 * credit
+        ),
+
+        # USDT: caixa sobe quando liquidez/filtro estão ruins
+        "USDT": (
+            -0.40 * liquidity
+            -0.30 * filter_score
+            -0.20 * growth
+            + 0.10 * credit
+        ),
     }
 
-    return {k: clamp(v, 0.05, 3.0) for k, v in scores.items()}
+    return {
+        asset: score_to_positive(score)
+        for asset, score in raw_scores.items()
+    }
 
 
 def calculate_dynamic_allocation(regime_result) -> Dict[str, float]:
@@ -53,13 +120,22 @@ def calculate_dynamic_allocation(regime_result) -> Dict[str, float]:
 
     scores = calculate_asset_scores(regime_result)
 
-    risk_scores = {a: scores[a] for a in RISK_ASSETS if a in scores}
-    defensive_scores = {a: scores[a] for a in DEFENSIVE_ASSETS if a in scores}
+    risk_scores = {
+        asset: scores[asset]
+        for asset in RISK_ASSETS
+        if asset in scores
+    }
+
+    defensive_scores = {
+        asset: scores[asset]
+        for asset in DEFENSIVE_ASSETS
+        if asset in scores
+    }
 
     risk_weights = normalize(risk_scores)
     defensive_weights = normalize(defensive_scores)
 
-    allocation = {}
+    allocation: Dict[str, float] = {}
 
     for asset, weight in risk_weights.items():
         allocation[asset] = risk_budget * weight
@@ -71,14 +147,22 @@ def calculate_dynamic_allocation(regime_result) -> Dict[str, float]:
 
 
 def explain_allocation(regime_result, allocation: Dict[str, float]) -> str:
+    scores = calculate_asset_scores(regime_result)
+
     lines = [
         f"Regime: {regime_result.regime}",
         f"Macro Score: {regime_result.macro_score:.2f}",
         f"Risk Budget: {regime_result.risk_budget:.2%}",
         f"Defensive Budget: {regime_result.defensive_budget:.2%}",
         "",
-        "ALOCAÇÃO RECOMENDADA",
+        "SCORES INDIVIDUAIS",
     ]
+
+    for asset, score in scores.items():
+        lines.append(f"{asset}: {score:.3f}")
+
+    lines.append("")
+    lines.append("ALOCAÇÃO RECOMENDADA")
 
     for asset, weight in allocation.items():
         lines.append(f"{asset}: {weight:.2%}")
