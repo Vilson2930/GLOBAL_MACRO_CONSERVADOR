@@ -1,3 +1,6 @@
+%cd /content/GLOBAL_MACRO_ENGINE
+
+code = r'''
 from __future__ import annotations
 
 from typing import Dict
@@ -43,7 +46,6 @@ def calculate_asset_scores(regime_result) -> Dict[str, float]:
         raw = 0.0
         for factor, weight in factors.items():
             raw += macro.get(factor, 0.0) * float(weight)
-
         scores[asset] = positive_score(raw)
 
     return scores
@@ -94,3 +96,8 @@ def explain_allocation(regime_result, allocation: Dict[str, float]) -> str:
         lines.append(f"{asset}: {weight:.2%}")
 
     return "\n".join(lines)
+'''
+
+open("engine/allocation.py", "w").write(code)
+
+print("allocation.py substituído com sucesso")
