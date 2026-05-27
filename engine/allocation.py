@@ -8,9 +8,11 @@ from engine.asset_models import ASSET_FACTORS
 
 def normalize(weights: Dict[str, float]) -> Dict[str, float]:
     total = sum(weights.values())
+
     if total <= 0:
         n = len(weights)
         return {k: 1.0 / n for k in weights}
+
     return {k: v / total for k, v in weights.items()}
 
 
@@ -18,16 +20,32 @@ def positive_score(x: float) -> float:
     return max(0.05, 1.0 + x)
 
 
+def safe_get(obj, name: str, default: float = 0.0) -> float:
+    try:
+        return float(getattr(obj, name, default))
+    except Exception:
+        return default
+
+
 def calculate_asset_scores(regime_result) -> Dict[str, float]:
     i = regime_result.indicators
 
     macro = {
-        "liquidity": 0.60 * i.liquidez_hoje + 0.40 * i.liquidez_t_100,
-        "growth": 0.55 * i.global_pmi + 0.45 * i.oecd_cli,
-        "credit": 0.60 * i.hy_spread + 0.40 * i.nfci,
-        "real_yield": i.real_yield_10y,
-        "usd": i.dxy_proxy,
-        "stress": i.vix,
+        "liquidity": (
+            0.60 * safe_get(i, "liquidez_hoje")
+            + 0.40 * safe_get(i, "liquidez_t_100")
+        ),
+        "growth": (
+            0.55 * safe_get(i, "global_pmi")
+            + 0.45 * safe_get(i, "oecd_cli")
+        ),
+        "credit": (
+            0.60 * safe_get(i, "hy_spread")
+            + 0.40 * safe_get(i, "nfci")
+        ),
+        "real_yield": safe_get(i, "real_yield_10y"),
+        "usd": safe_get(i, "dxy_proxy", 0.0),
+        "stress": safe_get(i, "vix", 0.0),
     }
 
     scores = {}
@@ -36,7 +54,7 @@ def calculate_asset_scores(regime_result) -> Dict[str, float]:
         raw = 0.0
 
         for factor, weight in factors.items():
-            raw += macro.get(factor, 0.0) * weight
+            raw += macro.get(factor, 0.0) * float(weight)
 
         scores[asset] = positive_score(raw)
 
