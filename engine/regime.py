@@ -1,5 +1,6 @@
 """
 engine/regime.py
+
 Motor de regime macro do GLOBAL_MACRO_ENGINE.
 """
 
@@ -30,6 +31,8 @@ class IndicatorScores:
     oecd_cli: float
     hy_spread: float
     nfci: float
+    dxy_proxy: float
+    vix: float
     filtro_composto: float
 
 
@@ -208,15 +211,36 @@ def calculate_nfci_score(
     return float(np.clip(0.60 * level + 0.40 * trend, -1, 1))
 
 
+def calculate_dxy_score(
+    fred: Dict[str, pd.Series],
+) -> float:
+    return slope_score(
+        fred["dxy_proxy"],
+        lookback=60,
+        higher_is_better=False,
+    )
+
+
+def calculate_vix_score(
+    fred: Dict[str, pd.Series],
+) -> float:
+    vix = get_latest_value(
+        fred["vix"]
+    )
+
+    return level_score(
+        vix,
+        positive_threshold=18.0,
+        negative_threshold=28.0,
+        lower_is_better=True,
+    )
+
+
 def calculate_filter_score(
     fred: Dict[str, pd.Series],
 ) -> float:
     curve = get_latest_value(
         fred["yield_curve_10y_3m"]
-    )
-
-    vix = get_latest_value(
-        fred["vix"]
     )
 
     curve_score = level_score(
@@ -225,17 +249,12 @@ def calculate_filter_score(
         negative_threshold=-0.50,
     )
 
-    vix_score = level_score(
-        vix,
-        positive_threshold=18.0,
-        negative_threshold=28.0,
-        lower_is_better=True,
+    vix_score = calculate_vix_score(
+        fred
     )
 
-    dxy_score = slope_score(
-        fred["dxy_proxy"],
-        lookback=60,
-        higher_is_better=False,
+    dxy_score = calculate_dxy_score(
+        fred
     )
 
     return float(
@@ -332,6 +351,12 @@ def calculate_regime(
             fred,
         ),
         nfci=calculate_nfci_score(
+            fred,
+        ),
+        dxy_proxy=calculate_dxy_score(
+            fred,
+        ),
+        vix=calculate_vix_score(
             fred,
         ),
         filtro_composto=calculate_filter_score(
