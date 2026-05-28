@@ -2,7 +2,6 @@ name: Run Macro Engine
 
 on:
   workflow_dispatch:
-
   schedule:
     - cron: "0 */6 * * *"
 
@@ -36,29 +35,39 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
-          python - <<'PY'
+          python - << 'EOF'
           import os
           import smtplib
           from email.mime.text import MIMEText
           from email.mime.multipart import MIMEMultipart
 
-          smtp_user = os.environ["SMTP_USER"]
-          smtp_password = os.environ["SMTP_PASSWORD"]
-          email_to = os.environ["EMAIL_TO"]
-
           with open("report.txt", "r", encoding="utf-8") as f:
               report = f.read()
 
-          msg = MIMEMultipart()
-          msg["From"] = smtp_user
-          msg["To"] = email_to
-          msg["Subject"] = "GLOBAL MACRO ENGINE - Relatorio automatico"
+          html = f"""
+          <html>
+          <body style="font-family: Arial; background:#0f1117; color:#e6edf3; padding:20px;">
+          <div style="background:#161b22; padding:20px; border-radius:12px;">
+          <h1 style="color:#58a6ff;">GLOBAL MACRO ENGINE</h1>
+          <p><b>Relatório automático de alocação macro</b></p>
+          <pre style="background:#0d1117; padding:15px; border-radius:8px; overflow-x:auto; color:#c9d1d9;">
+          {report}
+          </pre>
+          <p style="color:#8b949e; font-size:12px;">Gerado automaticamente via GitHub Actions</p>
+          </div>
+          </body>
+          </html>
+          """
 
-          msg.attach(MIMEText(report, "plain", "utf-8"))
+          msg = MIMEMultipart("alternative")
+          msg["Subject"] = "GLOBAL MACRO ENGINE - Relatório"
+          msg["From"] = os.environ["SMTP_USER"]
+          msg["To"] = os.environ["EMAIL_TO"]
+          msg.attach(MIMEText(html, "html"))
 
           with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-              server.login(smtp_user, smtp_password)
+              server.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
               server.send_message(msg)
 
-          print("Email enviado com sucesso.")
-          PY
+          print("EMAIL ENVIADO")
+          EOF
