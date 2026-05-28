@@ -1,4 +1,4 @@
-name: Run Macro Engine
+name: GLOBAL MACRO ENGINE
 
 on:
   workflow_dispatch:
@@ -60,7 +60,7 @@ jobs:
           """
 
           msg = MIMEMultipart("alternative")
-          msg["Subject"] = "GLOBAL MACRO ENGINE - Relatório"
+          msg["Subject"] = "GLOBAL_MACRO_CONSERVADOR - Relatório"
           msg["From"] = os.environ["SMTP_USER"]
           msg["To"] = os.environ["EMAIL_TO"]
           msg.attach(MIMEText(html, "html"))
