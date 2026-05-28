@@ -1,4 +1,6 @@
-%cd /content/GLOBAL_MACRO_ENGINE
+from __future__ import annotations
+
+from typing import Dict
 
 code = r'''
 from __future__ import annotations
